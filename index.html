@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Sine Generator</title>
+    <style>
+      body {
+        font-family:
+          system-ui,
+          -apple-system;
+        padding: 16px;
+        max-width: 520px;
+      }
+      .row {
+        margin: 12px 0;
+      }
+      label {
+        display: block;
+        margin-bottom: 6px;
+      }
+      input[type='range'] {
+        width: 100%;
+      }
+      button {
+        padding: 10px 14px;
+      }
+      .small {
+        color: #666;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>사인파 생성기</h1>
+
+    <div class="row">
+      <button id="toggle">Start</button>
+      <div class="small">처음엔 볼륨 낮게 시작해. (귀 보호)</div>
+    </div>
+
+    <div class="row">
+      <label>주파수 (Hz): <span id="freqVal">440</span></label>
+      <!-- <input id="freq" list="frq" min="20" max="20000" step="20" /> -->
+      <select name="" id="freq">
+        <option value="32">32</option>
+        <option value="64">64</option>
+        <option value="128">128</option>
+        <option value="256">256</option>
+        <option value="512">512</option>
+        <option value="1024">1K</option>
+        <option value="2048">2K</option>
+        <option value="4096">4K</option>
+        <option value="8192">8K</option>
+        <option value="16384">16K</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label>볼륨 (0.00 ~ 0.30): <span id="gainVal">0.05</span></label>
+      <input
+        id="gain"
+        type="range"
+        min="0"
+        max="0.30"
+        value="0.05"
+        step="0.01"
+      />
+    </div>
+
+    <script type="module">
+      let ctx = null
+      let osc = null
+      let gainNode = null
+      let isOn = false
+
+      const toggleBtn = document.getElementById('toggle')
+      const freq = document.getElementById('freq')
+      const gain = document.getElementById('gain')
+      const freqVal = document.getElementById('freqVal')
+      const gainVal = document.getElementById('gainVal')
+
+      const now = () => ctx.currentTime
+
+      function ensureContext() {
+        if (!ctx) {
+          ctx = new (window.AudioContext || window.webkitAudioContext)()
+        }
+      }
+
+      function start() {
+        ensureContext()
+
+        // iOS/Safari는 유저 제스처 후 resume 필요할 때가 많음
+        if (ctx.state !== 'running') ctx.resume()
+
+        osc = ctx.createOscillator()
+        osc.type = 'sine'
+        osc.frequency.value = Number(freq.value)
+
+        gainNode = ctx.createGain()
+        // 팝 방지: 시작은 0, 목표 볼륨까지 아주 짧게 램프
+        gainNode.gain.setValueAtTime(0, now())
+        gainNode.gain.linearRampToValueAtTime(Number(gain.value), now() + 0.015)
+
+        osc.connect(gainNode).connect(ctx.destination)
+        osc.start()
+
+        isOn = true
+        toggleBtn.textContent = 'Stop'
+      }
+
+      function stop() {
+        if (!ctx || !osc || !gainNode) return
+
+        // 팝 방지: 0으로 램프 후 stop
+        const t = now()
+        gainNode.gain.cancelScheduledValues(t)
+        gainNode.gain.setValueAtTime(gainNode.gain.value, t)
+        gainNode.gain.linearRampToValueAtTime(0, t + 0.02)
+
+        // stop은 미래시간 예약 가능
+        osc.stop(t + 0.03)
+        osc.onended = () => {
+          osc.disconnect()
+          gainNode.disconnect()
+          osc = null
+          gainNode = null
+        }
+
+        isOn = false
+        toggleBtn.textContent = 'Start'
+      }
+
+      // UI 이벤트
+      toggleBtn.addEventListener('click', () => {
+        if (isOn) stop()
+        else start()
+      })
+
+      freq.addEventListener('input', () => {
+        const v = Number(freq.value)
+        freqVal.textContent = String(v)
+
+        if (ctx && osc) {
+          // 지글거림 방지: setTargetAtTime으로 부드럽게
+          osc.frequency.setTargetAtTime(v, now(), 0.01)
+        }
+      })
+
+      gain.addEventListener('input', () => {
+        const v = Number(gain.value)
+        gainVal.textContent = v.toFixed(2)
+
+        if (ctx && gainNode) {
+          gainNode.gain.setTargetAtTime(v, now(), 0.01)
+        }
+      })
+    </script>
+  </body>
+</html>
