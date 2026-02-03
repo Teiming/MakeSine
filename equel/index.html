@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>평균율 사인파</title>
+    <style>
+      :root {
+        background-color: black;
+        color: white;
+        font-family: -apple-system, sans-serif;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      main {
+        max-width: 36rem;
+        margin: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+      .row {
+        display: flex;
+        gap: 0.5rem;
+      }
+
+      button {
+        font-size: 1rem;
+        padding: 0.5rem;
+        border-radius: 0.5rem;
+        border: none;
+        width: 6rem;
+      }
+
+      #noteContainer {
+        gap: 0.3rem;
+        label {
+          border: 1px solid aquamarine;
+          border-radius: 1rem;
+          padding: 0.5rem;
+          display: flex;
+          justify-content: center;
+        }
+        label:has(input:checked) {
+          background-color: aquamarine;
+          color: black;
+        }
+        input {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h2>평균율 사인파</h2>
+      <div class="row">
+        <button id="toggle">Start</button>
+        <div
+          style="
+            display: flex;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            border: 1px solid aquamarine;
+          "
+        >
+          <div
+            style="
+              background-color: aquamarine;
+              padding: 0.5rem;
+              color: black;
+              align-content: center;
+            "
+          >
+            현재 주파수
+          </div>
+          <div style="padding: 0.5rem; width: 6rem; text-align: center">
+            <span id="currentFreq">0</span>Hz
+          </div>
+        </div>
+      </div>
+      <div
+        id="noteContainer"
+        style="display: grid; grid-template-columns: repeat(7, 1fr)"
+      ></div>
+      <script>
+        const notes = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
+        const exp = [3, 5, 7, 8, 10, 0, 2]
+        const afreq = [
+          440 / 16,
+          440 / 8,
+          440 / 4,
+          440 / 2,
+          440,
+          440 * 2,
+          440 * 4,
+          440 * 8,
+          440 * 16,
+        ]
+        for (let o = 1; o < 9; o++) {
+          for (let i = 0; i < 7; i++) {
+            const freq = i < 5 ? afreq[o - 1] : afreq[o]
+            document.querySelector('#noteContainer').innerHTML +=
+              `<label><input type="radio" name="cf" value="${Math.floor(10 * (freq * Math.pow(2, exp[i] / 12))) / 10}" /><div>${notes[i]}${o}</div></label>`
+          }
+        }
+      </script>
+    </main>
+
+    <script type="module">
+      let ctx = null
+      let osc = null
+      let gainNode = null
+      let isOn = false
+
+      const toggleBtn = document.getElementById('toggle')
+      const freq = document.getElementById('freq')
+      const gain = document.getElementById('gain')
+
+      const now = () => ctx.currentTime
+
+      function ensureContext() {
+        if (!ctx) {
+          ctx = new (window.AudioContext || window.webkitAudioContext)()
+        }
+      }
+
+      function start() {
+        ensureContext()
+
+        // iOS/Safari는 유저 제스처 후 resume 필요할 때가 많음
+        if (ctx.state !== 'running') ctx.resume()
+
+        osc = ctx.createOscillator()
+        osc.type = 'sine'
+        osc.frequency.value = 0
+
+        gainNode = ctx.createGain()
+        // 팝 방지: 시작은 0, 목표 볼륨까지 아주 짧게 램프
+        gainNode.gain.setValueAtTime(0, now())
+        gainNode.gain.linearRampToValueAtTime(0.1, now() + 0.015)
+
+        osc.connect(gainNode).connect(ctx.destination)
+        osc.start()
+
+        isOn = true
+        toggleBtn.textContent = 'Stop'
+      }
+
+      function stop() {
+        if (!ctx || !osc || !gainNode) return
+
+        // 팝 방지: 0으로 램프 후 stop
+        const t = now()
+        gainNode.gain.cancelScheduledValues(t)
+        gainNode.gain.setValueAtTime(gainNode.gain.value, t)
+        gainNode.gain.linearRampToValueAtTime(0, t + 0.02)
+
+        // stop은 미래시간 예약 가능
+        osc.stop(t + 0.03)
+        osc.onended = () => {
+          osc.disconnect()
+          gainNode.disconnect()
+          osc = null
+          gainNode = null
+        }
+
+        isOn = false
+        toggleBtn.textContent = 'Start'
+      }
+
+      // UI 이벤트
+      toggleBtn.addEventListener('click', () => {
+        if (isOn) stop()
+        else start()
+      })
+
+      document.querySelectorAll('#noteContainer input').forEach(ele => {
+        ele.addEventListener('input', e => {
+          const freq = e.target.value
+          if (ctx && osc) {
+            osc.frequency.setTargetAtTime(Number(freq), now(), 0.01)
+          }
+          document.querySelector('#currentFreq').innerHTML = freq
+        })
+      })
+    </script>
+  </body>
+</html>
